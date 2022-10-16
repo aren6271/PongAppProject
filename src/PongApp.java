@@ -17,7 +17,7 @@ import javafx.stage.Stage;
 import javax.sound.midi.*;
 
 public class PongApp extends Application{
-    Point2D size = new Point2D(Screen.getPrimary().getBounds().getWidth()*0.30, Screen.getPrimary().getBounds().getHeight()*0.85);
+    Point2D size = new Point2D(Screen.getPrimary().getBounds().getWidth()*0.40, Screen.getPrimary().getBounds().getHeight()*0.85);
     final static double SPEED_INCREMENT = 0.15;
 
     public void start(Stage stage) throws Exception {
@@ -32,7 +32,6 @@ public class PongApp extends Application{
         Label fpsLabel = new Label();
         fpsLabel.setTranslateX(2);
         fpsLabel.setTextFill(Color.RED);
-        fpsLabel.setFont(Font.font(25));
 
         // Score Label
         Label scoreLabel = new Label();
@@ -254,7 +253,7 @@ public class PongApp extends Application{
                     if (!inBat) {
                         sound.play(true);
                         score += 1;
-                        horzBall = horzBall + (horzBat * 0.25);
+                        horzBall = horzBall + (horzBat * (avgFrameTimes/60));
                         if (vertBall > -60 && vertBall < 60) {
                             vertBall = (vertBall + SPEED_INCREMENT) * -1;
                         } else {
