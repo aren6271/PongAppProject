@@ -2,6 +2,7 @@ import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.event.EventHandler;
 import javafx.geometry.Point2D;
+import javafx.scene.Cursor;
 import javafx.scene.Group;
 import javafx.scene.Scene;
 import javafx.scene.control.Label;
@@ -9,26 +10,15 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.paint.Color;
-import javafx.scene.shape.Polygon;
 import javafx.scene.shape.Rectangle;
-import javafx.scene.shape.Shape;
 import javafx.scene.text.Font;
-import javafx.scene.transform.Rotate;
-import javafx.scene.transform.Scale;
-import javafx.scene.transform.Translate;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
-
-import java.util.HashSet;
-import java.util.Set;
+import javax.sound.midi.*;
 
 public class PongApp extends Application{
-    Point2D size = new Point2D(900, 1200);
-    final static double TAU = Math.PI * 2;
-    Set<KeyCode> keysDown = new HashSet<>();
-
-    int key(KeyCode k) {
-        return keysDown.contains(k) ? 1 : 0;
-    }
+    Point2D size = new Point2D(Screen.getPrimary().getBounds().getWidth()*0.30, Screen.getPrimary().getBounds().getHeight()*0.85);
+    final static double SPEED_INCREMENT = 0.15;
 
     public void start(Stage stage) throws Exception {
         Group gRoot = new Group();
@@ -37,10 +27,12 @@ public class PongApp extends Application{
         stage.setScene(scene);
         stage.setTitle("pong");
         scene.setFill(Color.WHITE);
+        scene.setCursor(Cursor.NONE);
 
         Label fpsLabel = new Label();
         fpsLabel.setTranslateX(2);
         fpsLabel.setTextFill(Color.RED);
+        fpsLabel.setFont(Font.font(25));
 
         // Score Label
         Label scoreLabel = new Label();
@@ -49,69 +41,74 @@ public class PongApp extends Application{
         scoreLabel.setTextFill(Color.BLUE);
         scoreLabel.setFont(Font.font(40));
 
-        //Wall Object
+        //WALL Object
         Rectangle bounds = new Rectangle(0, 0, size.getX(), size.getY());
         bounds.setVisible(false);
         gRoot.getChildren().add(bounds);
 
         // BAT Object
-        Rectangle bat = new Rectangle(100.0f, scene.getHeight()-20, 200, 20);
+        Rectangle bat = new Rectangle(scene.getWidth()/2, scene.getHeight()-20, scene.getWidth() * 0.35, 30);
         bat.setFill(Color.BLUE);
         bat.setStroke(Color.BLUE);
         bat.setStrokeWidth(3);
 
         // BALL Object
-
         Rectangle ball = new Rectangle(scene.getWidth()/2, scene.getHeight()/2, 50, 50);
         ball.setFill(Color.BLUE);
         ball.setStroke(Color.BLUE);
         ball.setStrokeWidth(3);
+
+        BinkBonkSound sound = new BinkBonkSound();
 
         Group gGame = new Group();
         Group gBat = new Group(bat);
         Group gBall = new Group(ball);
 
         gGame.getChildren().addAll(gBat, gBall);
-//40:26
         gRoot.getChildren().addAll(gGame, fpsLabel, scoreLabel);
-
-        /*
-        scene.setOnKeyPressed(new EventHandler<KeyEvent>() {
-            public void handle(KeyEvent event) {
-                keysDown.add(event.getCode());
-            }
-        });
-
-        scene.setOnKeyReleased(new EventHandler<KeyEvent>() {
-            public void handle(KeyEvent event) {
-                keysDown.remove(event.getCode());
-            }
-        });
-        */
 
         scene.setOnKeyPressed(new EventHandler<KeyEvent>() {
             @Override
             public void handle(KeyEvent event) {
-              if (keysDown.contains(event.getCode())) {
-                  keysDown.remove(event.getCode());
-              } else {
-                  keysDown.add(event.getCode());
-              }
+                if (event.getCode() == KeyCode.S) {
+                    sound.toggleSound();
+                } else if (event.getCode() == KeyCode.I) {
+                    fpsLabel.setVisible(!fpsLabel.isVisible());
+                }
             }
         });
-
         scene.setOnMouseMoved(new EventHandler<MouseEvent>() {
             @Override
             public void handle(MouseEvent event) {
                 bat.setX(event.getX() - (bat.getWidth()/2));
+                bat.setY(scene.getHeight()-bat.getHeight());
             }
         });
-
+        scene.setOnMouseExited(new EventHandler<MouseEvent>() {
+            @Override
+            public void handle(MouseEvent event) {
+                bat.setFill(Color.RED);
+                bat.setStroke(Color.RED);
+            }
+        });
+        scene.setOnMouseEntered(new EventHandler<MouseEvent>() {
+            @Override
+            public void handle(MouseEvent event) {
+                bat.setFill(Color.BLUE);
+                bat.setStroke(Color.BLUE);
+            }
+        });
 
         /* SETUP */
         AnimationTimer loop = new AnimationTimer() {
             double old = -1;
             double elapsedTime = 0;
+            double frames = -1;
+            double frameTimes = -1;
+            double avgFrames = -1;
+            double avgFrameTimes = -1;
+            int framesIndex = 0;
+
             int score = 0;
 
             double horzBall = 0;
@@ -119,94 +116,159 @@ public class PongApp extends Application{
 
             double horzBat = 0;
             double oldBatPos = bat.getX();
+            double offset = 0;
 
+            boolean inBat = false;
+            boolean inTop = false;
+            boolean inBot = false;
+            boolean inLeft = false;
+            boolean inRight = false;
 
             public void handle(long nano) {
+                /* GAME INFORMATION */
                 if (old < 0) old = nano;
-                double delta = (nano - old) / 1e9; // Divide by 1e9 to put time into Nanosecs
+                double delta = (nano - old) / 1e9; // Divide by 1e9 to put time into seconds
 
                 old = nano;
                 elapsedTime += delta;
 
-                // Make this dynamic not just a number
-                // Just for testing
-                // Divide Delta by Framerate?
-                horzBat = (bat.getX()-oldBatPos)/delta/144;
-                oldBatPos = bat.getX();
+                if (avgFrames < 0) avgFrames = 1/delta;
+                if (frames < 0) {
+                    frames = 1/delta;
+                } else {
+                    frames = frames + 1/delta;
+                }
 
-                System.out.println(horzBat);
+                if (avgFrameTimes < 0) avgFrameTimes = delta*1000;
+                if (frameTimes < 0) {
+                    frameTimes = delta*1000;
+                } else {
+                    frameTimes = frameTimes + (delta*1000);
+                }
 
-                fpsLabel.setText(String.format("%.2f %.2f", 1 / delta, elapsedTime)); // 1/delta = frames per sec
+                framesIndex += 1;
+
+                if (framesIndex == 25) {
+                    avgFrames = frames/framesIndex;
+                    frames = -1;
+
+                    avgFrameTimes = frameTimes/framesIndex;
+                    frameTimes = -1;
+
+                    framesIndex = 0;
+                }
+
+                fpsLabel.setText(String.format("%.2f FPS (avg) FT = %.2f (ms avg), GT = %.2f (s)", avgFrames, avgFrameTimes, elapsedTime)); // 1/delta = frames per sec
                 scoreLabel.setText(Integer.toString(score));
+
                 /* GAME LOOP */
 
-                //System.out.println(keysDown);
-
-                if (keysDown.contains(KeyCode.I)) {
-                    fpsLabel.setVisible(true);
-                } else {
-                    fpsLabel.setVisible(false);
-                }
-
-                int direction;
-                if (keysDown.contains(KeyCode.D)) {
-                    direction = 1;
-                }
-
-                /* BALL Movement */
+                /* BALL MECHANICS */
                 Point2D pBall = new Point2D(ball.getX(), ball.getY());
-
-                //System.out.println((pBall.add(vBall)).getY());
-
                 ball.setX(pBall.add(horzBall, vertBall).getX());
                 ball.setY(pBall.add(horzBall, vertBall).getY());
+                ball.setRotate(ball.getRotate()+offset);
+
+                /* BAT MECHANICS */
+                horzBat = (bat.getX()-oldBatPos);
+                oldBatPos = bat.getX();
+
+                if (score > 50 && bat.getWidth() > 2*ball.getWidth()) {
+                    bat.setWidth(bat.getWidth()-0.1);
+                }
+
+                /* WALL COLLISION MECHANICS */
 
                 if (leavingBounds(ball, bounds) == 0) {
-                    System.out.println("GAME OVER");
-//                    ball.getTransforms().clear();
-                    ball.setX(Math.random() * (scene.getWidth() - 100));
-                    ball.setY(Math.random() * (50));
-                    horzBall = 0;
-                    vertBall = 6;
-                    score = 0;
+                    if (!inBot) {
+                        ball.setX(Math.random() * (scene.getWidth() - (2*ball.getWidth())));
+                        ball.setY(Math.random() * (scene.getHeight()*0.1));
+                        horzBall = 0;
+                        vertBall = 6;
+                        ball.setRotate(0);
+                        offset = 0;
+                        score = 0;
+                        bat.setWidth(scene.getWidth() * 0.35);
+                        inBot = true;
+                    }
+                } else {
+                    inBot = false;
                 }
+
                 if (leavingBounds(ball, bounds) == 1) {
-                    score+=1;
-                    vertBall = vertBall *-1;
+                    //Top
+                    if (!inTop) {
+                        sound.play(false);
+                        score += 1;
+                        if (vertBall > -60 && vertBall < 60) {
+                            vertBall = (vertBall - SPEED_INCREMENT) * -1;
+                        } else {
+                            vertBall = vertBall * -1;
+                        }
+                        inTop = true;
+                    }
+                } else {
+                    inTop = false;
                 }
-                if (leavingBounds(ball, bounds) == 2 ) {
-                    score+=1;
-                    horzBall = horzBall *-1;
+
+                if (leavingBounds(ball, bounds) == 2) {
+                    //Right
+                    if (!inRight) {
+                        sound.play(false);
+                        score += 1;
+                        horzBall = horzBall * -1;
+                        if (vertBall > -60 && vertBall < 60) {
+                            if (vertBall < 0) {
+                                vertBall = vertBall - SPEED_INCREMENT;
+                            } else {
+                                vertBall = vertBall + SPEED_INCREMENT;
+                            }
+                        }
+                        inRight = true;
+                    }
+                } else {
+                        inRight = false;
                 }
+
                 if (leavingBounds(ball, bounds) == 3) {
-                    score+=1;
-                    horzBall = horzBall *-1;
+                    //Left
+                    if (!inLeft) {
+                        sound.play(false);
+                        score += 1;
+                        horzBall = horzBall * -1;
+                        if (vertBall > -60 && vertBall < 60) {
+                            if (vertBall < 0) {
+                                vertBall = vertBall - SPEED_INCREMENT;
+                            } else {
+                                vertBall = vertBall + SPEED_INCREMENT;
+                            }
+                        }
+                        inLeft = true;
+                    }
+                } else {
+                    inLeft = false;
                 }
 
-                // If the ball hits the bat
+                /* BAT COLLISION MECHANICS */
                 if (!ball.intersect(ball, bat).getBoundsInLocal().isEmpty()) {
-                    System.out.println("HIT");
-                    score+=1;
-                    Point2D hitVelocity = new Point2D(horzBall, vertBall).add(horzBat, 0);
-                    horzBall = hitVelocity.getX();
-                    vertBall = hitVelocity.getY() *-1;
-
-                    //vBall = Point2D(vBall.getX(), vBall.get)
-                    //vertBall[0] = vertBall[0] *-1;
-//                    ball.getTransforms().addAll(
-//                            new Translate(vBall.getX(), vBall.getY())
-//                            new Rotate(Math.toDegrees(theta))
-//                    );
-
+                    if (!inBat) {
+                        sound.play(true);
+                        score += 1;
+                        horzBall = horzBall + (horzBat * 0.25);
+                        if (vertBall > -60 && vertBall < 60) {
+                            vertBall = (vertBall + SPEED_INCREMENT) * -1;
+                        } else {
+                            vertBall = vertBall * -1;
+                        }
+                        offset = horzBall * 0.5;
+                        inBat = true;
+                    }
+                } else {
+                    inBat = false;
                 }
-
-
-                //System.out.println(ball.intersects(bat.getBoundsInLocal()));
             }
         };
-
         loop.start();
-
         stage.show();
     }
 
@@ -221,31 +283,91 @@ public class PongApp extends Application{
                 return 3; // Left
             }
         } else {
-            if (ball.getY() > bounds.getHeight()) {
-                return 0; // Bottom
-            }
+            return 0; // Bottom / Out of Bounds
         }
         return -1;
     }
 
-//    public Point2D vecAngle(double angle, double mag) {
-//        return new Point2D(Math.cos(angle), Math.sin(angle)).multiply(mag);
-//    }
-//
-//    public double rand(double min, double max) {
-//        return Math.random() * (max - min) + min;
-//    }
+class BinkBonkSound {
 
-//    public void update(double delta, Point2D p, Point2D v, double theta, double omega, Rectangle transform) {
-//        p = p.add(v.multiply(delta));
-//        theta = (theta + omega * delta) % TAU;
-//
-//        transform.getTransforms().clear();
-//        transform.getTransforms().addAll(
-//                new Translate(p.getX(), p.getY()),
-//                new Rotate(Math.toDegrees(theta))
-//        );
-//    }
+    // magic numbers that are not common knowledge unless one
+    // has studied the GM2 standard and the midi sound system
+    //
+    // The initials GM mean General Midi. This GM standard
+    // provides for a set of common sounds that respond
+    // to midi messages in a common way.
+    //
+    // MIDI is a standard for the encoding and transmission
+    // of musical sound meta-information, e.g., play this
+    // note on this instrument at this level and this pitch
+    // for this long.
+    //
+    private static final int MAX_PITCH_BEND = 16383;
+    private static final int MIN_PITCH_BEND = 0;
+    private static final int REVERB_LEVEL_CONTROLLER = 91;
+    private static final int MIN_REVERB_LEVEL = 0;
+    private static final int MAX_REVERB_LEVEL = 127;
+    private static final int DRUM_MIDI_CHANNEL = 9;
+    private static final int CLAVES_NOTE = 76;
+    private static final int NORMAL_VELOCITY = 100;
+    private static final int MAX_VELOCITY = 127;
+
+    Instrument[] instrument;
+    MidiChannel[] midiChannels;
+    boolean playSound;
+
+    public BinkBonkSound(){
+        playSound=true;
+        try{
+            Synthesizer gmSynthesizer = MidiSystem.getSynthesizer();
+            gmSynthesizer.open();
+            instrument = gmSynthesizer.getDefaultSoundbank().getInstruments();
+            midiChannels = gmSynthesizer.getChannels();
+
+        } catch (MidiUnavailableException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // This method has more comments than would typically be needed for
+    // programmers using the Java sound system libraries. This is because
+    // most students will not have exposure to the specifics of midi and
+    // the general midi sound system. For example, drums are on channel
+    // 10 and this cannot be changed. The GM2 standard defines much of
+    // the detail that I have chosen to use static constants to encode.
+    //
+    // The use of midi to play sounds allows us to avoid using external
+    // media, e.g., wav files, to play sounds in the game.
+    //
+    void play(boolean hiPitch){
+        if(playSound) {
+
+            // Midi pitch bend is required to play a single drum note
+            // at different pitches. The high and low pongs are two
+            // octaves apart. As you recall from high school physics,
+            // each additional octave doubles the frequency.
+            //
+            midiChannels[DRUM_MIDI_CHANNEL]
+                    .setPitchBend(hiPitch ? MAX_PITCH_BEND : MIN_PITCH_BEND);
+
+            // Turn the reverb send fully off. Drum sounds play until they
+            // decay completely. Reverb extends the audible decay and,
+            // from a gameplay point of view, is distracting.
+            //
+            midiChannels[DRUM_MIDI_CHANNEL]
+                    .controlChange(REVERB_LEVEL_CONTROLLER, MIN_REVERB_LEVEL);
+
+            // Play the claves on the drum channel at a "normal" volume
+            //
+            midiChannels[DRUM_MIDI_CHANNEL]
+                    .noteOn(CLAVES_NOTE, NORMAL_VELOCITY);
+        }
+    }
+
+    public void toggleSound() {
+        playSound = !playSound;
+    }
+}
 
     public static void main(String[] args) {
         launch(args);
