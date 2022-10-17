@@ -389,7 +389,7 @@ class Pong {
     public void collideBat(ScoreDisplay score, BinkBonkSound sound, GameTimer info) {
         sound.play(true);
         score.setScore(score.getScore() + 1);
-        ball.horizontalVelocity = ball.horizontalVelocity + (bat.horizontalVelocity / info.avgFrameTimes);
+        ball.horizontalVelocity = ball.horizontalVelocity + (bat.horizontalVelocity * (info.avgFrameTimes/info.avgFrames));
         if (ball.verticalVelocity > -60 && ball.verticalVelocity < 60) {
             ball.verticalVelocity = (ball.verticalVelocity + SPEED_INCREMENT) * -1;
         } else {
