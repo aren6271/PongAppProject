@@ -17,7 +17,8 @@ import javafx.stage.Stage;
 import javax.sound.midi.*;
 
 public class PongApp extends Application{
-    Point2D size = new Point2D(Screen.getPrimary().getBounds().getWidth()*0.40, Screen.getPrimary().getBounds().getHeight()*0.85);
+    Point2D size = new Point2D(Screen.getPrimary().getBounds().getWidth()*0.40,
+                                Screen.getPrimary().getBounds().getHeight()*0.85);
     final static double SPEED_INCREMENT = 0.15;
 
     public void start(Stage stage) throws Exception {
@@ -46,7 +47,9 @@ public class PongApp extends Application{
         gRoot.getChildren().add(bounds);
 
         // BAT Object
-        Rectangle bat = new Rectangle(scene.getWidth()/2, scene.getHeight()-20, scene.getWidth() * 0.35, 30);
+        Rectangle bat = new Rectangle(scene.getWidth()/2,
+                                    scene.getHeight()-20,
+                                scene.getWidth() * 0.35, 30);
         bat.setFill(Color.BLUE);
         bat.setStroke(Color.BLUE);
         bat.setStrokeWidth(3);
@@ -157,7 +160,8 @@ public class PongApp extends Application{
                     framesIndex = 0;
                 }
 
-                fpsLabel.setText(String.format("%.2f FPS (avg) FT = %.2f (ms avg), GT = %.2f (s)", avgFrames, avgFrameTimes, elapsedTime)); // 1/delta = frames per sec
+                fpsLabel.setText(String.format("%.2f FPS (avg) FT = %.2f (ms avg), GT = %.2f (s)",
+                                                avgFrames, avgFrameTimes, elapsedTime)); // 1/delta = frames per sec
                 scoreLabel.setText(Integer.toString(score));
 
                 /* GAME LOOP */
