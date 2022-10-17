@@ -16,7 +16,6 @@ import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javax.sound.midi.*;
 
-
 class BinkBonkSound {
 
     // magic numbers that are not common knowledge unless one
@@ -100,21 +99,24 @@ class BinkBonkSound {
 class GameTimer {
     Label info;
     boolean gameTimerVisible;
+    double delta, oldNano, elapsedTime;
     double frames, frameTimes;
     double avgFrames, avgFrameTimes;
     int framesIndex;
-//    double
     public GameTimer(Group parent) {
         info = new Label();
         info.setTranslateX(2);
         info.setTextFill(Color.RED);
         gameTimerVisible = true;
 
-        frames = -1;
-        frameTimes = -1;
-        double avgFrames = -1;
-        double avgFrameTimes = -1;
-        framesIndex = 0;
+        delta = 0;
+        oldNano = -1;
+        elapsedTime = 0;
+        frames = 0;
+        frameTimes = 0;
+        avgFrames = -1;
+        avgFrameTimes = -1;
+        framesIndex = -1;
 
         parent.getChildren().add(info);
     }
@@ -122,25 +124,78 @@ class GameTimer {
         gameTimerVisible = !gameTimerVisible;
         info.setVisible(gameTimerVisible);
     }
-
-    public double calculateAvgFrames(double delta) {
-        return 144.0f;
+    public void updateDelta (double nano) {
+        delta = (nano - oldNano) / 1e9;
+        oldNano = nano;
     }
-
-    public double calculateAvgFrameTimes() {
-        return 7.0f;
+    public void updateElapsedTime () {
+        elapsedTime = elapsedTime + delta;
     }
+    public void updateFrames () {
+        frames = frames + (1/delta);
+    }
+    public void updateFrameTimes () {
+        frameTimes = frameTimes + (delta*1000);
+    }
+    public void updateFrameIndex () {
+        framesIndex = framesIndex + 1;
+    }
+    public void calculateAvgInformation(double nano) {
+        if (oldNano < 0) oldNano = nano;
 
-    public void updateDisplay(double elapsedTime) {
+        if (framesIndex < 0) {
+            avgFrames = frames;
+            avgFrameTimes = frameTimes;
+        }
+        updateDelta(nano);
+        updateElapsedTime();
+        updateFrames();
+        updateFrameTimes();
+        updateFrameIndex();
+
+        if (framesIndex == 25) {
+            avgFrames = frames/framesIndex;
+            frames = 0;
+
+            avgFrameTimes = frameTimes/framesIndex;
+            frameTimes = 0;
+
+            framesIndex = 0;
+        }
+    }
+    public void updateDisplay(double nano) {
+        calculateAvgInformation(nano);
+
         info.setText(String.format("%.2f FPS (avg) FT = %.2f (ms avg), GT = %.2f (s)",
-                                    calculateAvgFrames(2.2),
-                                    calculateAvgFrameTimes(),
+                                    avgFrames,
+                                    avgFrameTimes,
                                     elapsedTime));
     }
 }
 class ScoreDisplay{
+    Label scoreDisplay;
+    private int score;
+    public ScoreDisplay(Group parent, double sceneWidth, double sceneHeight) {
+        scoreDisplay = new Label();
+        scoreDisplay.setTranslateX(sceneWidth/2);
+        scoreDisplay.setTranslateY(sceneHeight/3);
+        scoreDisplay.setTextFill(Color.BLUE);
+        scoreDisplay.setFont(Font.font(40));
 
+        parent.getChildren().add(scoreDisplay);
+    }
+    public void updateScoreDisplay() {
+        scoreDisplay.setText(Integer.toString(this.getScore()));
+    }
+
+    public int getScore() {
+        return score;
+    }
+    public void setScore(int score) {
+        this.score = score;
+    }
 }
+
 abstract class PhysicsObject {
     Point2D position;
     double horizontalVelocity, verticalVelocity, height, width, offset;
@@ -162,6 +217,8 @@ abstract class PhysicsObject {
     public void update(Rectangle object) {
         object.setX(position.getX());
         object.setY(position.getY());
+        object.setWidth(width);
+        object.setHeight(height);
         object.setRotate(object.getRotate()+offset);
     }
 
@@ -169,11 +226,9 @@ abstract class PhysicsObject {
 
     public boolean intersects(PhysicsObject po) {
         return !Rectangle.intersect(getShapeBounds(), po.getShapeBounds())
-                .getBoundsInLocal().isEmpty(); // Checks if the 2 objects are colliding
+                .getBoundsInLocal().isEmpty();
     }
-
 }
-
 class Ball extends PhysicsObject {
     Rectangle ball;
     public Ball(Group parent, Point2D p, double w, double h) {
@@ -224,14 +279,12 @@ class Bat extends PhysicsObject {
 
         transform.getChildren().add(bat);
     }
-
     public void update(double mouseX, double sceneHeight) {
         Point2D newP = new Point2D(mouseX - (bat.getWidth()/2), sceneHeight-bat.getHeight());
         this.position = newP;
 
         super.update(bat);
     }
-
     public void calculateSpeed(double currX) {
         this.horizontalVelocity = currX-oldPosition;
         this.oldPosition = currX;
@@ -246,24 +299,23 @@ class Bat extends PhysicsObject {
             bat.setStroke(Color.RED);
         }
     }
+    public void shrinkBat () {
+        this.width = this.width-0.1;
+        super.update(bat);
+    }
     public Rectangle getShapeBounds() { return bat; }
 }
-
 class Walls extends PhysicsObject {
     Rectangle walls;
     public Walls(Group parent, double w, double h) {
         super(parent, Point2D.ZERO, 0, 0, w, h);
         walls = new Rectangle(0,0, w, h );
     }
-
     public Rectangle getShapeBounds() { return walls; }
 }
 
 class Pong {
-    //Game Model (Score update + Collision)
-    //Change this later
     final static double SPEED_INCREMENT = 0.15;
-
     boolean inBat, inTop, inRight, inLeft, inBottom;
     Ball ball;
     Bat bat;
@@ -282,13 +334,12 @@ class Pong {
     enum Sides {
         TOP,
         SIDE,
-        //LEFT,
         BOTTOM
     }
-    public void inCollision() {
+    public void inCollision(ScoreDisplay score, BinkBonkSound sound, GameTimer info) {
         if (ball.intersects(bat)) {
             if (!inBat) {
-                collideBat();
+                collideBat(score, sound, info);
                 inBat = true;
             }
         } else {
@@ -299,7 +350,7 @@ class Pong {
             if (!inTop) {
                 if (ball.position.getY() < 0) {
                     // Top
-                    collideWall(Sides.TOP);
+                    collideWall(Sides.TOP, score, sound);
                     inTop = true;
                 }
             } else {
@@ -309,7 +360,7 @@ class Pong {
             if (!inRight) {
                 if (ball.position.getX() + ball.width > walls.width) {
                     // Right
-                    collideWall(Sides.SIDE);
+                    collideWall(Sides.SIDE, score, sound);
                     inRight = true;
                 }
             } else {
@@ -319,7 +370,7 @@ class Pong {
             if (!inLeft) {
                 if (ball.position.getX() < 0) {
                     // Left
-                    collideWall(Sides.SIDE);
+                    collideWall(Sides.SIDE, score, sound);
                     inLeft = true;
                 }
             } else {
@@ -328,32 +379,28 @@ class Pong {
 
         } else {
             if (!inBottom) {
-                collideWall(Sides.BOTTOM);
+                collideWall(Sides.BOTTOM, score, sound);
                 inBottom = true;
             } else {
                 inBottom = false;
             }
         }
     }
-    public void collideBat() {
-        //sound.play(true);
-        //score += 1;
-
-        // Change 7 from constant to avgFrameTimes
-        ball.horizontalVelocity = ball.horizontalVelocity + (bat.horizontalVelocity / 7);
+    public void collideBat(ScoreDisplay score, BinkBonkSound sound, GameTimer info) {
+        sound.play(true);
+        score.setScore(score.getScore() + 1);
+        ball.horizontalVelocity = ball.horizontalVelocity + (bat.horizontalVelocity / info.avgFrameTimes);
         if (ball.verticalVelocity > -60 && ball.verticalVelocity < 60) {
             ball.verticalVelocity = (ball.verticalVelocity + SPEED_INCREMENT) * -1;
         } else {
             ball.verticalVelocity = ball.verticalVelocity * -1;
         }
     }
-
-    public void collideWall(Sides side) {
-//        sound.play(false);
-//        score += 1;
-
+    public void collideWall(Sides side, ScoreDisplay score, BinkBonkSound sound) {
         switch(side) {
             case TOP:
+                sound.play(false);
+                score.setScore(score.getScore() + 1);
                 if (ball.verticalVelocity > -60 && ball.verticalVelocity < 60) {
                     ball.verticalVelocity = (ball.verticalVelocity - SPEED_INCREMENT) * -1;
                 } else {
@@ -361,6 +408,8 @@ class Pong {
                 }
                 break;
             case SIDE:
+                sound.play(false);
+                score.setScore(score.getScore() + 1);
                 if (ball.verticalVelocity > -60 && ball.verticalVelocity < 60) {
                     ball.horizontalVelocity = ball.horizontalVelocity * -1;
                     if (ball.verticalVelocity < 0) {
@@ -371,6 +420,7 @@ class Pong {
                 }
                 break;
             case BOTTOM:
+                score.setScore(0);
                 ball.reset(walls.width, walls.height);
                 bat.width = (walls.width * 0.35);
                 break;
@@ -391,9 +441,9 @@ public class OPongApp extends Application{
         scene.setCursor(Cursor.NONE);
 
         Group gLabel = new Group();
-
         BinkBonkSound sound = new BinkBonkSound();
         GameTimer informationDisplay = new GameTimer(gLabel);
+        ScoreDisplay scoreDisplay = new ScoreDisplay(gLabel, scene.getWidth(), scene.getHeight());
 
         Group gGame = new Group();
         Ball ball = new Ball(gGame, new Point2D(scene.getWidth()/2, scene.getHeight()/2), 50, 50);
@@ -432,22 +482,17 @@ public class OPongApp extends Application{
             }
         });
         AnimationTimer loop = new AnimationTimer() {
-            double old = -1;
-            double elapsedTime = 0;
             public void handle(long nano) {
-                if (old < 0) old = nano;
-                double delta = (nano - old) / 1e9; // Divide by 1e9 to put time into Nanosecs
-
-                old = nano;
-                elapsedTime += delta;
-
-                informationDisplay.updateDisplay(elapsedTime);
+                scoreDisplay.updateScoreDisplay();
+                informationDisplay.updateDisplay(nano);
                 ball.update();
                 bat.calculateSpeed(bat.position.getX());
-                gameModel.inCollision();
+                gameModel.inCollision(scoreDisplay, sound, informationDisplay);
+                if (scoreDisplay.getScore() > 50 && bat.width > 2*ball.width) {
+                    bat.shrinkBat();
+                }
             }
         };
-
         loop.start();
         stage.show();
     }

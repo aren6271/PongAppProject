@@ -129,7 +129,7 @@ public class PongApp extends Application{
             public void handle(long nano) {
                 /* GAME INFORMATION */
                 if (old < 0) old = nano;
-                double delta = (nano - old) / 1e9; // Divide by 1e9 to put time into seconds
+                double delta = (nano - old) / 1e9;
 
                 old = nano;
                 elapsedTime += delta;
@@ -181,7 +181,6 @@ public class PongApp extends Application{
                 }
 
                 /* WALL COLLISION MECHANICS */
-
                 if (leavingBounds(ball, bounds) == 0) {
                     if (!inBot) {
                         ball.setX(Math.random() * (scene.getWidth() - (2*ball.getWidth())));
